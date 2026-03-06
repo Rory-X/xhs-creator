@@ -7,6 +7,7 @@ import click
 
 from ..config import load_config
 from ..formatter import format_publish_preview, output_json
+from ..md2xhs import md_to_xhs
 from ..xhs_client import check_login, ensure_mcp_running, publish_note
 
 
@@ -209,6 +210,12 @@ def publish(title, content, images, draft, confirm, json_mode):
             err=True,
         )
         raise SystemExit(1)
+
+    # Markdown → 小红书纯文本
+    original_content = content
+    content = md_to_xhs(content)
+    if content != original_content and not json_mode:
+        click.echo(click.style("📝 已将 Markdown 转换为小红书格式", fg="cyan"))
 
     # 处理图片路径
     image_list = None
