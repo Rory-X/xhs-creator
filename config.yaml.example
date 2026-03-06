@@ -1,0 +1,47 @@
+# xhs-creator 配置文件
+# 通过 `xhs-creator config init` 交互式生成
+# 通过 `xhs-creator config set <key> <value>` 修改
+
+# ── LLM API 配置 ──
+llm:
+  api_url: "https://chat.tabcode.cc/v1/chat/completions"
+  api_key: ""                     # API 密钥（首次使用需配置）
+  model: "grok-4.20-beta"
+  temperature: 0.7                # 生成创造性，0-1，越高越有创意
+  timeout: 300                    # API 超时时间（秒）
+
+# ── 小红书 MCP 配置 ──
+xhs:
+  mcp_port: 18060                 # MCP 服务端口
+  auto_start: true                # 执行命令时自动启动 MCP 服务
+  tools_path: ""
+
+# ── 默认内容风格 ──
+defaults:
+  style: "种草"                   # 默认写作风格: 种草 / 测评 / 教程 / 日常分享 / 干货
+  tone: "活泼"                    # 默认语气: 活泼 / 专业 / 亲切 / 搞笑
+  length: "medium"                # 默认篇幅: short(≤300字) / medium(300-600字) / long(600-1000字)
+  emoji: true                     # 标题和正文是否默认包含 emoji
+  max_title_length: 20            # 标题最大字数
+
+# ── 领域偏好 ──
+domains:
+  primary: ""                     # 主要创作领域
+  secondary: []                   # 其他关注领域
+  custom_tags: []                 # 常用自定义话题标签
+  auto_topic: false               # 启用后 topic 命令不指定关键词时自动从 primary+secondary 随机选一个领域
+
+# ── 图片生成配置（预留） ──
+image_gen:
+  enabled: false                  # 是否启用 API 图片生成（true 时调用 API 生成配图）
+  api_url: "https://chat.tabcode.cc/v1/chat/completions"
+  api_key: ""
+  model: "gemini-3.1-flash-image-three-four"
+  style: "小红书风格，色彩鲜明，扁平插画"
+
+# ── 输出设置 ──
+output:
+  format: "text"                  # 默认输出格式: text / json
+  color: true                     # 终端彩色输出
+  save_history: true              # 保存生成历史
+  history_dir: "~/.xhs-creator/history"
