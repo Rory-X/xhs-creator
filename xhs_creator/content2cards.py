@@ -61,8 +61,13 @@ DEFAULT_THEME = "tech"
 # 图片尺寸 (3:4 竖版，小红书推荐)
 WIDTH = 1080
 HEIGHT = 1440
-PADDING = 80
-CONTENT_WIDTH = WIDTH - PADDING * 2
+PADDING_TOP = 100     # 顶部边距
+PADDING_BOTTOM = 100  # 底部边距（与顶部对称）
+PADDING_SIDE = 80     # 左右边距
+PAGE_INDICATOR_H = 60 # 页码指示器高度
+CONTENT_WIDTH = WIDTH - PADDING_SIDE * 2
+# 实际可渲染内容的高度
+MAX_CONTENT_H = HEIGHT - PADDING_TOP - PADDING_BOTTOM - PAGE_INDICATOR_H
 
 
 @dataclass
@@ -163,7 +168,7 @@ def _clean_inline(text: str) -> str:
 
 
 def _estimate_block_height(block: ContentBlock, layout: "PangoCairo.Layout", font_sizes: dict) -> int:
-    """估算一个 block 渲染需要的高度"""
+    """估算一个 block 渲染需要的高度（偏保守，宁可多分页不溢出）"""
     if block.type == "heading":
         size = font_sizes.get("heading", 42)
         font = Pango.FontDescription.from_string(f"Noto Sans CJK SC Bold {size}")
@@ -171,18 +176,28 @@ def _estimate_block_height(block: ContentBlock, layout: "PangoCairo.Layout", fon
         layout.set_width(CONTENT_WIDTH * Pango.SCALE)
         layout.set_text(block.text, -1)
         _, lr = layout.get_pixel_extents()
-        return lr.height + 20  # heading 额外间距
+        return lr.height + 30  # heading 下方间距
     
-    elif block.type in ("text", "bullet", "numbered", "quote"):
+    elif block.type in ("text", "bullet", "numbered"):
         size = font_sizes.get("body", 32)
         font = Pango.FontDescription.from_string(f"Noto Sans CJK SC {size}")
         layout.set_font_description(font)
-        w = CONTENT_WIDTH - (40 if block.type in ("bullet", "numbered") else 0)
-        w = w - 60 if block.type == "quote" else w
+        w = CONTENT_WIDTH - (50 if block.type in ("bullet", "numbered") else 0)
         layout.set_width(w * Pango.SCALE)
+        layout.set_line_spacing(1.6)
         layout.set_text(block.text, -1)
         _, lr = layout.get_pixel_extents()
-        return lr.height + 12
+        return lr.height + 18
+    
+    elif block.type == "quote":
+        size = font_sizes.get("body", 28)
+        font = Pango.FontDescription.from_string(f"Noto Sans CJK SC {size}")
+        layout.set_font_description(font)
+        layout.set_width((CONTENT_WIDTH - 80) * Pango.SCALE)
+        layout.set_line_spacing(1.5)
+        layout.set_text(block.text, -1)
+        _, lr = layout.get_pixel_extents()
+        return max(lr.height + 40, 70) + 18  # quote box padding + gap
     
     elif block.type == "code":
         size = font_sizes.get("code", 26)
@@ -210,8 +225,8 @@ def split_into_cards(title: str, blocks: List[ContentBlock], theme_name: str = D
     
     font_sizes = {"heading": 42, "body": 32, "code": 26}
     
-    # 可用内容高度（去掉顶部/底部边距 + 页码区）
-    usable_height = HEIGHT - PADDING * 2 - 80  # 80 for page indicator
+    # 可用内容高度
+    usable_height = MAX_CONTENT_H
     
     cards = []
     current_blocks = []
@@ -241,11 +256,11 @@ def split_into_cards(title: str, blocks: List[ContentBlock], theme_name: str = D
     if tag_blocks and cards:
         cards[-1].blocks.extend(tag_blocks)
     
-    # 优化：如果最后一页内容太少（<50%高度），尝试合并到前一页
+    # 优化：如果最后一页内容太少（<40%高度），尝试合并到前一页（严格不超限）
     if len(cards) >= 2:
         last_h = sum(_estimate_block_height(b, layout, font_sizes) for b in cards[-1].blocks)
         prev_h = sum(_estimate_block_height(b, layout, font_sizes) for b in cards[-2].blocks)
-        if last_h < usable_height * 0.5 and prev_h + last_h <= usable_height * 1.05:
+        if last_h < usable_height * 0.4 and prev_h + last_h <= usable_height:
             cards[-2].blocks.extend(cards[-1].blocks)
             cards.pop()
     
@@ -275,7 +290,7 @@ def _draw_gradient_bg(ctx, theme):
 
 def _draw_page_indicator(ctx, page, total, theme):
     """绘制页码指示器"""
-    y = HEIGHT - 60
+    y = HEIGHT - PADDING_BOTTOM / 2
     dot_size = 8
     gap = 20
     total_w = total * dot_size + (total - 1) * gap
@@ -365,9 +380,15 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
     layout = PangoCairo.create_layout(ctx)
     layout.set_wrap(Pango.WrapMode.CHAR)
     
-    y = PADDING
+    y = PADDING_TOP
+    
+    y_limit = HEIGHT - PADDING_BOTTOM - PAGE_INDICATOR_H  # 绝对不能超过这个 y
     
     for block in card.blocks:
+        # 安全检查：如果快到底部了，停止渲染
+        if y > y_limit - 40:
+            break
+        
         if block.type == "heading":
             size = 42 if block.level <= 2 else 36
             font = Pango.FontDescription.from_string(f"Noto Sans CJK SC Bold {size}")
@@ -378,13 +399,13 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             # heading 下划线装饰
             _, lr = layout.get_pixel_extents()
             
-            ctx.move_to(PADDING, y)
+            ctx.move_to(PADDING_SIDE, y)
             ctx.set_source_rgb(*theme["title_color"])
             PangoCairo.show_layout(ctx, layout)
             
             # 左侧色条
             ctx.set_source_rgb(*theme["accent"])
-            ctx.rectangle(PADDING - 15, y + 4, 5, lr.height - 8)
+            ctx.rectangle(PADDING_SIDE - 15, y + 4, 5, lr.height - 8)
             ctx.fill()
             
             y += lr.height + 25
@@ -397,7 +418,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             layout.set_text(block.text, -1)
             _, lr = layout.get_pixel_extents()
             
-            ctx.move_to(PADDING, y)
+            ctx.move_to(PADDING_SIDE, y)
             ctx.set_source_rgb(*theme["text_color"])
             PangoCairo.show_layout(ctx, layout)
             y += lr.height + 16
@@ -405,7 +426,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
         elif block.type == "bullet":
             # 圆点
             ctx.set_source_rgb(*theme["bullet"])
-            ctx.arc(PADDING + 10, y + 20, 6, 0, 2 * math.pi)
+            ctx.arc(PADDING_SIDE + 10, y + 20, 6, 0, 2 * math.pi)
             ctx.fill()
             
             font = Pango.FontDescription.from_string("Noto Sans CJK SC 30")
@@ -415,7 +436,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             layout.set_text(block.text, -1)
             _, lr = layout.get_pixel_extents()
             
-            ctx.move_to(PADDING + 35, y)
+            ctx.move_to(PADDING_SIDE + 35, y)
             ctx.set_source_rgb(*theme["text_color"])
             PangoCairo.show_layout(ctx, layout)
             y += lr.height + 12
@@ -423,7 +444,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
         elif block.type == "numbered":
             # 数字圆圈
             ctx.set_source_rgb(*theme["accent"])
-            ctx.arc(PADDING + 18, y + 18, 18, 0, 2 * math.pi)
+            ctx.arc(PADDING_SIDE + 18, y + 18, 18, 0, 2 * math.pi)
             ctx.fill()
             
             num_layout = PangoCairo.create_layout(ctx)
@@ -431,7 +452,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             num_layout.set_font_description(num_font)
             num_layout.set_text(str(block.level), -1)
             _, nlr = num_layout.get_pixel_extents()
-            ctx.move_to(PADDING + 18 - nlr.width / 2 - nlr.x, y + 18 - nlr.height / 2 - nlr.y)
+            ctx.move_to(PADDING_SIDE + 18 - nlr.width / 2 - nlr.x, y + 18 - nlr.height / 2 - nlr.y)
             ctx.set_source_rgb(*theme["bg_start"])
             PangoCairo.show_layout(ctx, num_layout)
             
@@ -442,7 +463,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             layout.set_text(block.text, -1)
             _, lr = layout.get_pixel_extents()
             
-            ctx.move_to(PADDING + 50, y)
+            ctx.move_to(PADDING_SIDE + 50, y)
             ctx.set_source_rgb(*theme["text_color"])
             PangoCairo.show_layout(ctx, layout)
             y += lr.height + 14
@@ -460,15 +481,15 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             
             # 背景
             ctx.set_source_rgba(*theme["card_bg"], 0.6)
-            _rounded_rect(ctx, PADDING, y, CONTENT_WIDTH, quote_h, 12)
+            _rounded_rect(ctx, PADDING_SIDE, y, CONTENT_WIDTH, quote_h, 12)
             ctx.fill()
             
             # 左边色条
             ctx.set_source_rgb(*theme["accent"])
-            ctx.rectangle(PADDING, y, 5, quote_h)
+            ctx.rectangle(PADDING_SIDE, y, 5, quote_h)
             ctx.fill()
             
-            ctx.move_to(PADDING + 30, y + 15)
+            ctx.move_to(PADDING_SIDE + 30, y + 15)
             ctx.set_source_rgba(*theme["text_color"], 0.85)
             PangoCairo.show_layout(ctx, layout)
             y += quote_h + 16
@@ -483,10 +504,10 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             
             # 代码背景
             ctx.set_source_rgba(*theme["card_bg"], 0.8)
-            _rounded_rect(ctx, PADDING, y, CONTENT_WIDTH, code_h, 12)
+            _rounded_rect(ctx, PADDING_SIDE, y, CONTENT_WIDTH, code_h, 12)
             ctx.fill()
             
-            ctx.move_to(PADDING + 25, y + 20)
+            ctx.move_to(PADDING_SIDE + 25, y + 20)
             ctx.set_source_rgba(*theme["text_color"], 0.9)
             PangoCairo.show_layout(ctx, layout)
             y += code_h + 16
@@ -498,7 +519,7 @@ def render_content_card(card: Card, theme_name: str = DEFAULT_THEME) -> str:
             layout.set_text(block.text, -1)
             _, lr = layout.get_pixel_extents()
             
-            ctx.move_to(PADDING, y)
+            ctx.move_to(PADDING_SIDE, y)
             ctx.set_source_rgba(*theme["accent"], 0.7)
             PangoCairo.show_layout(ctx, layout)
             y += lr.height + 10
