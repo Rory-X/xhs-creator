@@ -187,10 +187,12 @@ def _generate_cover_via_api(title, image_gen_cfg):
 @click.option("--title", "-t", required=True, help="笔记标题（≤20字）")
 @click.option("--content", "-c", required=True, help="笔记正文（≤1000字）")
 @click.option("--images", "-i", default=None, help="图片路径，逗号分隔")
+@click.option("--cards", is_flag=True, help="将内容转为多张卡片图发布（推荐！）")
+@click.option("--theme", default="tech", type=click.Choice(["tech", "warm", "fresh"]), help="卡片主题")
 @click.option("--draft", is_flag=True, help="保存为草稿")
 @click.option("--confirm/--no-confirm", default=True, help="发布前确认")
 @click.option("--json", "json_mode", is_flag=True, help="以 JSON 格式输出")
-def publish(title, content, images, draft, confirm, json_mode):
+def publish(title, content, images, cards, theme, draft, confirm, json_mode):
     """将内容发布到小红书"""
     cfg = load_config()
     max_title_len = cfg["defaults"]["max_title_length"]
@@ -203,8 +205,8 @@ def publish(title, content, images, draft, confirm, json_mode):
         )
         raise SystemExit(1)
 
-    # 校验正文长度
-    if len(content) > 1000:
+    # 校验正文长度（卡片模式不限制，内容在图片上）
+    if not cards and len(content) > 1000:
         click.echo(
             click.style(f"❌ 正文超过 1000 字限制 (当前 {len(content)} 字)", fg="red"),
             err=True,
@@ -217,37 +219,48 @@ def publish(title, content, images, draft, confirm, json_mode):
     if content != original_content and not json_mode:
         click.echo(click.style("📝 已将 Markdown 转换为小红书格式", fg="cyan"))
 
-    # 处理图片路径
-    image_list = None
-    if images:
-        image_list = [p.strip() for p in images.split(",")]
-        for img_path in image_list:
-            if not os.path.exists(img_path):
-                click.echo(click.style(f"❌ 图片不存在: {img_path}", fg="red"), err=True)
-                raise SystemExit(1)
+    # 卡片图模式
+    if cards:
+        from ..content2cards import content_to_cards
+        if not json_mode:
+            click.echo(click.style(f"🎨 正在生成卡片图（{theme} 主题）...", fg="cyan"))
+        card_paths = content_to_cards(title, original_content, theme)
+        image_list = card_paths
+        if not json_mode:
+            click.echo(click.style(f"✅ 生成 {len(card_paths)} 张卡片图", fg="green"))
+            for p in card_paths:
+                click.echo(f"   📄 {p}")
+    else:
+        # 处理图片路径（原有逻辑）
+        image_list = None
+        if images:
+            image_list = [p.strip() for p in images.split(",")]
+            for img_path in image_list:
+                if not os.path.exists(img_path):
+                    click.echo(click.style(f"❌ 图片不存在: {img_path}", fg="red"), err=True)
+                    raise SystemExit(1)
 
-    # 无图片时自动生成封面
-    if not image_list:
-        image_gen_cfg = cfg.get("image_gen", {})
-        if image_gen_cfg.get("enabled", False):
-            # 使用 API 生成配图
-            cover_path = _generate_cover_via_api(title, image_gen_cfg)
-            if cover_path:
-                image_list = [cover_path]
-                if not json_mode:
-                    click.echo(click.style(f"🎨 已通过 API 生成封面: {cover_path}", fg="green"))
+        # 无图片时自动生成封面
+        if not image_list:
+            image_gen_cfg = cfg.get("image_gen", {})
+            if image_gen_cfg.get("enabled", False):
+                cover_path = _generate_cover_via_api(title, image_gen_cfg)
+                if cover_path:
+                    image_list = [cover_path]
+                    if not json_mode:
+                        click.echo(click.style(f"🎨 已通过 API 生成封面: {cover_path}", fg="green"))
+                else:
+                    if not json_mode:
+                        click.echo(click.style("⚠ API 生成封面失败，使用本地生成", fg="yellow"))
+                    cover_path = _generate_cover(title)
+                    image_list = [cover_path]
+                    if not json_mode:
+                        click.echo(click.style(f"🖼  已自动生成封面: {cover_path}", fg="green"))
             else:
-                if not json_mode:
-                    click.echo(click.style("⚠ API 生成封面失败，使用本地生成", fg="yellow"))
                 cover_path = _generate_cover(title)
                 image_list = [cover_path]
                 if not json_mode:
                     click.echo(click.style(f"🖼  已自动生成封面: {cover_path}", fg="green"))
-        else:
-            cover_path = _generate_cover(title)
-            image_list = [cover_path]
-            if not json_mode:
-                click.echo(click.style(f"🖼  已自动生成封面: {cover_path}", fg="green"))
 
     # 确保 MCP 服务运行
     mcp_status = ensure_mcp_running()
