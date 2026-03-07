@@ -101,8 +101,7 @@ def search_notes(keyword, limit=10):
         dict: {"content": str, "raw": dict} 或 {"error": str}
     """
     args = ["search", "-k", keyword]
-    if limit:
-        args.extend(["-n", str(limit)])
+    # Note: MCP search_feeds does not support limit parameter
 
     result = _run_xhs_cmd(args)
 
