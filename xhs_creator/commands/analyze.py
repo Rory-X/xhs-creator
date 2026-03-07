@@ -4,7 +4,7 @@ import click
 
 from ..formatter import format_analysis, format_parse_failure, output_json
 from ..llm import call_llm, parse_llm_json
-from ..prompts import ANALYZE_SYSTEM_PROMPT
+from ..prompts import get_prompt
 from ..xhs_client import ensure_mcp_running, search_notes
 
 
@@ -17,8 +17,10 @@ from ..xhs_client import ensure_mcp_running, search_notes
     help="排序方式（hot: 热度 / new: 最新）",
 )
 @click.option("--detail", is_flag=True, help="输出详细分析（含每条笔记摘要）")
+@click.option("--no-track", is_flag=True, help="本次不记录调用历史")
+@click.option("--prompt-version", default=None, help="使用指定版本 prompt")
 @click.option("--json", "json_mode", is_flag=True, help="以 JSON 格式输出")
-def analyze(keyword, limit, sort, detail, json_mode):
+def analyze(keyword, limit, sort, detail, no_track, prompt_version, json_mode):
     """搜索分析小红书同类笔记的爆款特征"""
     # 确保 MCP 服务运行
     mcp_status = ensure_mcp_running()
@@ -42,7 +44,9 @@ def analyze(keyword, limit, sort, detail, json_mode):
         return
 
     # 构造分析 prompt 并调用 LLM
-    prompt = ANALYZE_SYSTEM_PROMPT.format(
+    prompt = get_prompt(
+        "ANALYZE_SYSTEM_PROMPT",
+        version=prompt_version,
         keyword=keyword,
         search_context=search_context,
     )
@@ -50,7 +54,13 @@ def analyze(keyword, limit, sort, detail, json_mode):
     if not json_mode:
         click.echo("正在分析笔记特征...")
 
-    result = call_llm(f"分析关于「{keyword}」的小红书笔记", prompt)
+    result = call_llm(
+        f"分析关于「{keyword}」的小红书笔记", prompt,
+        track=not no_track,
+        command="analyze",
+        options={"keyword": keyword, "limit": limit},
+        prompt_info={"template_name": "ANALYZE_SYSTEM_PROMPT", "template_version": prompt_version or "builtin"},
+    )
 
     if "error" in result:
         click.echo(click.style(f"❌ 错误: {result['error']}", fg="red"), err=True)

@@ -149,6 +149,123 @@ def format_publish_preview(title, content, images=None):
     click.echo()
 
 
+def format_trace_row(trace):
+    """格式化单条 trace 为终端行"""
+    trace_id = trace.get("trace_id", "")
+    # 截短显示（后8位）
+    short_id = trace_id[-8:] if len(trace_id) > 8 else trace_id
+
+    command = trace.get("command", "?")
+    query = trace.get("input", {}).get("query", "").replace("\n", " ").strip()
+    if len(query) > 30:
+        query = query[:30] + "..."
+
+    fb = trace.get("feedback", {})
+    rating = fb.get("rating")
+    rating_str = "⭐" * rating if rating else "-"
+
+    adopted = fb.get("adopted")
+    if adopted is True:
+        status = click.style("✓", fg="green")
+    elif adopted is False:
+        status = click.style("✗", fg="red")
+    else:
+        status = "-"
+
+    ts = trace.get("timestamp", "")[:16]  # YYYY-MM-DDTHH:MM
+
+    # 命令用颜色标签
+    cmd_colors = {"topic": "yellow", "title": "cyan", "write": "green", "analyze": "magenta"}
+    cmd_color = cmd_colors.get(command, "white")
+    cmd_str = click.style(command, fg=cmd_color)
+
+    click.echo(f"  {click.style(short_id, fg='bright_black')} | {cmd_str} | {query} | {rating_str} | {status} | {click.style(ts, fg='bright_black')}")
+
+
+def format_history_table(traces):
+    """格式化 trace 列表为表格"""
+    click.echo(click.style("\n📋 调用历史\n", fg="cyan", bold=True))
+    click.echo(click.style(
+        f"  {'ID':>8} | {'命令':6} | {'查询':30} | {'评分':5} | {'状态':3} | 时间",
+        fg="bright_black",
+    ))
+    click.echo(click.style("  " + "-" * 78, fg="bright_black"))
+
+    for t in traces:
+        format_trace_row(t)
+
+    click.echo()
+
+
+def format_stats_report(report):
+    """格式化统计报告"""
+    summary = report.get("summary", {})
+
+    click.echo(click.style("\n📊 创作统计报告\n", fg="cyan", bold=True))
+
+    # 总览
+    click.echo(click.style("总览:", fg="yellow", bold=True))
+    click.echo(f"  总调用次数: {summary.get('total_traces', 0)}")
+    click.echo(f"  已评分次数: {summary.get('rated_traces', 0)}")
+
+    avg = summary.get("avg_rating", 0)
+    if avg > 0:
+        click.echo(f"  平均评分: {avg} {'⭐' * round(avg)}")
+    else:
+        click.echo("  平均评分: -")
+
+    adopt = summary.get("adopt_rate", 0)
+    click.echo(f"  采用率: {int(adopt * 100)}%")
+    publish = summary.get("publish_rate", 0)
+    click.echo(f"  发布率: {int(publish * 100)}%")
+
+    # 按命令分组
+    by_cmd = summary.get("by_command", {})
+    if by_cmd:
+        click.echo(click.style("\n按命令统计:", fg="yellow", bold=True))
+        for cmd, data in sorted(by_cmd.items()):
+            r = data.get("avg_rating", 0)
+            rating_str = f"{r} {'⭐' * round(r)}" if r > 0 else "-"
+            click.echo(f"  {cmd:10} {data.get('count', 0)} 次 | 评分 {rating_str} | 采用率 {int(data.get('adopt_rate', 0) * 100)}%")
+
+    # Top 组合
+    top = report.get("top_combinations", [])
+    if top:
+        click.echo(click.style("\n最佳参数组合:", fg="green", bold=True))
+        for i, c in enumerate(top, 1):
+            parts = []
+            if c.get("style"):
+                parts.append(c["style"])
+            if c.get("tone"):
+                parts.append(c["tone"])
+            if c.get("length"):
+                parts.append(c["length"])
+            click.echo(f"  {i}. {' + '.join(parts) or '-'} | 评分 {c.get('avg_rating', 0)} | {c.get('count', 0)} 次")
+
+    # Worst 组合
+    worst = report.get("worst_combinations", [])
+    if worst:
+        click.echo(click.style("\n低分参数组合:", fg="red", bold=True))
+        for i, c in enumerate(worst, 1):
+            parts = []
+            if c.get("style"):
+                parts.append(c["style"])
+            if c.get("tone"):
+                parts.append(c["tone"])
+            if c.get("length"):
+                parts.append(c["length"])
+            click.echo(f"  {i}. {' + '.join(parts) or '-'} | 评分 {c.get('avg_rating', 0)} | {c.get('count', 0)} 次")
+
+    # 优化建议
+    suggestions = report.get("optimization_suggestions", [])
+    if suggestions:
+        click.echo(click.style("\n💡 优化建议:", fg="yellow", bold=True))
+        for i, s in enumerate(suggestions, 1):
+            click.echo(f"  {i}. {s}")
+
+    click.echo()
+
+
 def format_config(cfg):
     """格式化配置显示"""
     click.echo(click.style("\n⚙️  当前配置 (~/.xhs-creator/config.yaml)\n", fg="cyan", bold=True))

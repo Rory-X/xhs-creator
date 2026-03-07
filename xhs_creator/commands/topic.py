@@ -7,7 +7,7 @@ import click
 from ..config import load_config
 from ..formatter import format_parse_failure, format_topics, output_json
 from ..llm import call_llm, parse_llm_json
-from ..prompts import TOPIC_SYSTEM_PROMPT
+from ..prompts import TOPIC_SYSTEM_PROMPT, get_prompt
 from ..xhs_client import ensure_mcp_running, search_notes
 
 
@@ -16,13 +16,49 @@ from ..xhs_client import ensure_mcp_running, search_notes
 @click.option("-n", "--count", default=5, help="生成选题数量")
 @click.option("--style", default=None, help="内容风格（种草/测评/教程/日常分享）")
 @click.option("--hot", is_flag=True, help="结合小红书热门趋势生成")
+@click.option("--no-track", is_flag=True, help="本次不记录调用历史")
+@click.option("--prompt-version", default=None, help="使用指定版本 prompt")
+@click.option("--smart", is_flag=True, help="使用智能推荐引擎")
 @click.option("--json", "json_mode", is_flag=True, help="以 JSON 格式输出")
-def topic(keyword, count, style, hot, json_mode):
+def topic(keyword, count, style, hot, no_track, prompt_version, smart, json_mode):
     """根据关键词生成小红书选题建议
 
     KEYWORD 可选。未指定时使用配置的主要领域，或自动从领域列表随机选取。
     """
     cfg = load_config()
+
+    # --smart 模式：使用推荐引擎
+    if smart and not keyword:
+        try:
+            from ..recommender.engine import Recommender
+            engine = Recommender()
+            if not json_mode:
+                click.echo(click.style("🧠 智能推荐模式...", fg="cyan"))
+            recs = engine.generate_recommendations(n=count)
+            if recs:
+                # 转为 topic 格式输出
+                data = {
+                    "keyword": "智能推荐",
+                    "topics": [
+                        {
+                            "title": r.get("topic", ""),
+                            "angle": r.get("reason", ""),
+                            "heat_score": r.get("heat_score", 3),
+                            "tags": r.get("tags", []),
+                        }
+                        for r in recs
+                    ],
+                }
+                if json_mode:
+                    output_json(data)
+                else:
+                    format_topics(data, "智能推荐")
+                return
+            if not json_mode:
+                click.echo(click.style("推荐引擎无结果，回退到普通模式", fg="yellow"))
+        except Exception:
+            if not json_mode:
+                click.echo(click.style("推荐引擎不可用，回退到普通模式", fg="yellow"))
 
     # 未指定关键词时，从 domains 配置中获取
     if not keyword:
@@ -75,7 +111,9 @@ def topic(keyword, count, style, hot, json_mode):
                 click.echo("将不使用热门趋势数据，继续生成选题...")
 
     # 构造 prompt 并调用 LLM
-    prompt = TOPIC_SYSTEM_PROMPT.format(
+    prompt = get_prompt(
+        "TOPIC_SYSTEM_PROMPT",
+        version=prompt_version,
         count=count,
         style=style,
         hot_context=hot_context,
@@ -84,7 +122,13 @@ def topic(keyword, count, style, hot, json_mode):
     if not json_mode:
         click.echo("正在生成选题...")
 
-    result = call_llm(keyword, prompt)
+    result = call_llm(
+        keyword, prompt,
+        track=not no_track,
+        command="topic",
+        options={"style": style, "count": count},
+        prompt_info={"template_name": "TOPIC_SYSTEM_PROMPT", "template_version": prompt_version or "builtin"},
+    )
 
     if "error" in result:
         click.echo(click.style(f"❌ 错误: {result['error']}", fg="red"), err=True)

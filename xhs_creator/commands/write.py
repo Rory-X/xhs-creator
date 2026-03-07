@@ -5,7 +5,7 @@ import click
 from ..config import load_config
 from ..formatter import format_article, format_parse_failure, output_json
 from ..llm import call_llm, parse_llm_json
-from ..prompts import LENGTH_DESC, WRITE_SYSTEM_PROMPT
+from ..prompts import LENGTH_DESC, get_prompt
 
 
 @click.command()
@@ -19,8 +19,10 @@ from ..prompts import LENGTH_DESC, WRITE_SYSTEM_PROMPT
 )
 @click.option("--tags", default=None, help="自定义话题标签，逗号分隔")
 @click.option("--image-tips/--no-image-tips", default=True, help="附带图片建议（默认开启）")
+@click.option("--no-track", is_flag=True, help="本次不记录调用历史")
+@click.option("--prompt-version", default=None, help="使用指定版本 prompt")
 @click.option("--json", "json_mode", is_flag=True, help="以 JSON 格式输出")
-def write(topic, style, tone, length, tags, image_tips, json_mode):
+def write(topic, style, tone, length, tags, image_tips, no_track, prompt_version, json_mode):
     """根据选题自动生成小红书正文"""
     cfg = load_config()
 
@@ -54,7 +56,9 @@ def write(topic, style, tone, length, tags, image_tips, json_mode):
     else:
         image_tips_instruction = "image_tips 字段返回空对象 {{}}"
 
-    prompt = WRITE_SYSTEM_PROMPT.format(
+    prompt = get_prompt(
+        "WRITE_SYSTEM_PROMPT",
+        version=prompt_version,
         style=style,
         tone=tone,
         length_desc=length_desc,
@@ -65,7 +69,13 @@ def write(topic, style, tone, length, tags, image_tips, json_mode):
     if not json_mode:
         click.echo("正在生成正文...")
 
-    result = call_llm(topic, prompt)
+    result = call_llm(
+        topic, prompt,
+        track=not no_track,
+        command="write",
+        options={"style": style, "tone": tone, "length": length, "tags": tags},
+        prompt_info={"template_name": "WRITE_SYSTEM_PROMPT", "template_version": prompt_version or "builtin"},
+    )
 
     if "error" in result:
         click.echo(click.style(f"❌ 错误: {result['error']}", fg="red"), err=True)

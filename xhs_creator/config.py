@@ -49,6 +49,24 @@ DEFAULT_CONFIG = {
         "save_history": True,
         "history_dir": str(HISTORY_DIR),
     },
+    "prompt_optimization": {
+        "auto_optimize": False,
+        "auto_optimize_threshold": 20,
+        "optimization_model": None,
+    },
+    "recommend": {
+        "enabled": True,
+        "daily_count": 5,
+        "cache_ttl_hours": 6,
+        "weights": {
+            "trend": 0.3,
+            "match": 0.3,
+            "freshness": 0.25,
+            "timeliness": 0.15,
+        },
+        "explore_ratio": 0.2,
+        "auto_collect_domains": [],
+    },
 }
 
 

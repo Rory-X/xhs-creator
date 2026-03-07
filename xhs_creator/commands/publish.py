@@ -291,6 +291,15 @@ def publish(title, content, images, cards, theme, draft, confirm, json_mode):
         click.echo(click.style(f"❌ 发布失败: {result['error']}", fg="red"), err=True)
         raise SystemExit(1)
 
+    # 自动标记最近的 write trace 为 published
+    try:
+        from ..tracker import add_feedback, get_last_trace_id
+        last_id = get_last_trace_id()
+        if last_id:
+            add_feedback(last_id, published=True)
+    except Exception:
+        pass  # tracker 失败不应阻止发布流程
+
     if json_mode:
         output_json({"success": True, "message": result.get("content", "发布成功")})
     else:

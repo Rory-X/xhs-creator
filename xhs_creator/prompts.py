@@ -1,5 +1,7 @@
 """所有 system_prompt 模板集中管理"""
 
+from typing import Optional
+
 # 篇幅描述映射
 LENGTH_DESC = {
     "short": "短篇（不超过300字）",
@@ -108,3 +110,69 @@ ANALYZE_SYSTEM_PROMPT = """你是小红书内容分析专家。
   "suggestions": ["建议1", "建议2", "建议3"]
 }}
 只返回 JSON，不要添加其他文字。""" + _JSON_ONLY_INSTRUCTION
+
+RECOMMEND_SYSTEM_PROMPT = """你是小红书选题推荐专家。
+
+用户画像：
+- 擅长领域: {domains}
+- 偏好风格: {preferred_styles}
+- 已创作过的话题: {created_topics}
+
+当前平台趋势:
+{trends_summary}
+
+时间因素:
+- 当前日期: {current_date}
+- 相关节日/季节: {calendar_events}
+
+请推荐 {count} 个适合该用户创作的小红书选题。
+
+请严格按以下 JSON 格式返回：
+{{
+  "recommendations": [
+    {{
+      "topic": "推荐话题标题",
+      "reason": "推荐理由",
+      "heat_score": 1到5的整数,
+      "suggested_style": "建议风格",
+      "suggested_tone": "建议语气",
+      "tags": ["标签1", "标签2"]
+    }}
+  ]
+}}
+只返回 JSON，不要添加其他文字。""" + _JSON_ONLY_INSTRUCTION
+
+# 内置模板注册表
+BUILTIN_PROMPTS = {
+    "TOPIC_SYSTEM_PROMPT": TOPIC_SYSTEM_PROMPT,
+    "TITLE_SYSTEM_PROMPT": TITLE_SYSTEM_PROMPT,
+    "WRITE_SYSTEM_PROMPT": WRITE_SYSTEM_PROMPT,
+    "ANALYZE_SYSTEM_PROMPT": ANALYZE_SYSTEM_PROMPT,
+    "RECOMMEND_SYSTEM_PROMPT": RECOMMEND_SYSTEM_PROMPT,
+}
+
+
+def get_prompt(template_name, version=None, **kwargs):
+    # type: (str, Optional[str], ...) -> str
+    """
+    加载 prompt 模板:
+    1. 指定 version -> optimizer.get_prompt_by_version
+    2. 未指定 -> optimizer.get_current_prompt
+    3. 都返回 None -> BUILTIN_PROMPTS fallback
+    4. .format(**kwargs) 渲染
+    """
+    from .optimizer import get_current_prompt, get_prompt_by_version
+
+    content = None
+    if version:
+        content = get_prompt_by_version(template_name, version)
+    else:
+        content = get_current_prompt(template_name)
+
+    if content is None:
+        content = BUILTIN_PROMPTS.get(template_name)
+
+    if content is None:
+        raise ValueError("Unknown template: {}".format(template_name))
+
+    return content.format(**kwargs) if kwargs else content
